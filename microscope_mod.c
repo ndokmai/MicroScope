@@ -346,4 +346,5 @@ void cleanup_module() {
   unregister_kprobe(&kp);
   set_print_msg_attack(0);
   set_attack_value(NULL, 0);
+  victim_pid_set = false;
 }
