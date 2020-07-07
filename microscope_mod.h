@@ -21,15 +21,16 @@
 
 #define IOCTL_SET_MSG _IOR(MAJOR_NUM, 0, char *)
 
-#define IOCTL_SET_NUKE_ADDR _IOR(MAJOR_NUM, 1, char *)
+#define IOCTL_SET_VICTIM_PID _IOR(MAJOR_NUM, 1, char *)
 
-#define IOCTL_SET_MONITOR_ADDR _IOR(MAJOR_NUM, 2, char *)
+#define IOCTL_SET_NUKE_ADDR _IOR(MAJOR_NUM, 2, char *)
 
-#define IOCTL_PREP_PF _IOR(MAJOR_NUM, 3, char *)
+#define IOCTL_SET_MONITOR_ADDR _IOR(MAJOR_NUM, 3, char *)
 
-#define DEVICE_FILE_NAME "nuke_channel"
-#define DEVICE_FILE_NAME_PATH "your_path_here/nuke_channel"
+#define IOCTL_PREP_PF _IOR(MAJOR_NUM, 4, char *)
 
-enum call_type { MSG, NUKE_ADDR, MONITOR_ADDR, PF };
+#define DEVICE_NAME "nuke_channel"
+
+enum call_type { MSG, VICTIM_PID, NUKE_ADDR, MONITOR_ADDR, PF };
 
 #endif

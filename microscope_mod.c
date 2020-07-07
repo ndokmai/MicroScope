@@ -47,10 +47,9 @@
 #include "util.h"
 
 #define SUCCESS 0
-#define DEVICE_NAME "microscope_mod"
 #define BUF_LEN 80
 // Retries is the number of computations we want to monitor
-#define RETRIES 2000000
+#define RETRIES 2000
 // number of replays to gain enough confidence in the result
 #define CONFIDENCE 2
 // Cache line step from each profiling address to the next
@@ -76,6 +75,8 @@ extern pte_t *fault_pte;
 
 static char Message[BUF_LEN];
 static char *Message_Ptr;
+static pid_t victim_pid;
+static bool victim_pid_set;
 
 /*
  * device_open is invoked when the victim connects to the char device.
@@ -124,11 +125,22 @@ static ssize_t device_write(struct file *file, const char __user *buffer, size_t
   //  printk(KERN_INFO "Received Address %p\n", (void *)address);
 
   switch (type) {
+    case VICTIM_PID:
+      victim_pid = (pid_t)address;
+      victim_pid_set = true;
+      printk(KERN_INFO "Setting up victim PID = %u\n", victim_pid);
+      break;
+
     case NUKE_ADDR:
       printk(KERN_INFO "Setting up nuke id %u -> addr %p\n", set_nuke, (void *)address);
-      setup_nuke_structs(&ptr_info[set_nuke], address);
+      if (victim_pid_set) {
+          setup_nuke_structs_with_pid(&ptr_info[set_nuke], address, victim_pid);
+      } else {
+          setup_nuke_structs(&ptr_info[set_nuke], address);
+      }
       set_nuke++;
       break;
+
     case MONITOR_ADDR:
       printk(KERN_INFO "Setting up monitor id %u -> addr %p\n", set_nuke,
              (void *)address);
@@ -259,6 +271,10 @@ long device_ioctl(struct file *file, unsigned int ioctl_num, unsigned long ioctl
       device_write(file, (char *)ioctl_param, i, 0, MSG);
       break;
 
+    case IOCTL_SET_VICTIM_PID:
+      device_write(file, (char *)ioctl_param, i, 0, VICTIM_PID);
+      break;
+
     case IOCTL_SET_NUKE_ADDR:
       device_write(file, (char *)ioctl_param, i, 0, NUKE_ADDR);
       break;
@@ -314,8 +330,9 @@ int init_module() {
     return ret_val;
   }
   set_print_msg_attack(0);
+  victim_pid_set = false;
 
-  printk(KERN_INFO "If a channel does not exist run: mknod %s c %d 0\n", DEVICE_FILE_NAME,
+  printk(KERN_INFO "If a channel does not exist run: mknod %s c %d 0\n", DEVICE_NAME,
          MAJOR_NUM);
 
   return 0;

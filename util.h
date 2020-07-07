@@ -179,6 +179,7 @@ uint32_t asm_cctime(uint64_t addr);
  * @addr is the VA to be nuked
  */
 void setup_nuke_structs(struct attack_info *info, uint64_t address);
+void setup_nuke_structs_with_pid(struct attack_info *info, uint64_t address, pid_t pid);
 
 /*
  * setup_monitor_structs configures the attack info struct with the information
@@ -268,13 +269,14 @@ uint64_t get_physical(struct mm_struct *mm, uint64_t address, pte_t **ptepp,
  * is cleared.
  * @mm is the mm_struct of the process
  * @address is the addres we are searching
+ * @kernel_address mapped address of 'address' in kernel space. (Found in info->nuke_kaddr .)
  * @ptepp a pointer to the pte, this will be set at the end of the search
  * with the pte we nuked
  * @ptlp is the splinlock to be used to lock the page tables with
  * @present if non-zero the Present bit of the pte is cleared
  */
-int nuke_lock(struct mm_struct *mm, uint64_t address, pte_t **ptepp, spinlock_t **ptlp,
-              int present);
+int nuke_lock(struct mm_struct *mm, uint64_t address, void *kernel_address, 
+              pte_t **ptepp, spinlock_t **ptlp, int present);
 
 /*
  * nuke_lockless finds the address of the page tables
@@ -284,12 +286,14 @@ int nuke_lock(struct mm_struct *mm, uint64_t address, pte_t **ptepp, spinlock_t 
  * performed to fetch the data.
  * @mm is the mm_struct of the process
  * @address is the addres we are searching
+ * @kernel_address mapped address of 'address' in kernel space. (Found in info->nuke_kaddr .)
  * @ptepp a pointer to the pte, this will be set at the end of the search
  * with the pte we nuked
  * @ptlp is the splinlock to be used to lock the page tables with
  * @present if non-zero the Present bit of the pte is cleared
  */
-int nuke_lockless(struct mm_struct *mm, uint64_t address, pte_t **ptepp, int present);
+int nuke_lockless(struct mm_struct *mm, uint64_t address, void *kernel_address, 
+                  pte_t **ptepp, int present);
 
 int nuke_lockless_partial(struct mm_struct *mm, uint64_t address, pte_t **ptepp,
                           int present);
